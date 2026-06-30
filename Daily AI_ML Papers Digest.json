@@ -1,0 +1,283 @@
+{
+  "name": "Daily AI/ML Papers Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 8
+            }
+          ]
+        }
+      },
+      "id": "f9316431-5490-4bd0-b29d-a3a0aa591a07",
+      "name": "Daily at 8 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        240,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://export.arxiv.org/api/query?search_query=cat:cs.AI+OR+cat:cs.LG&sortBy=submittedDate&sortOrder=descending&max_results=5",
+        "options": {}
+      },
+      "id": "eccfee9d-18f2-49e4-bd5e-6f912f237814",
+      "name": "Fetch arXiv Papers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        464,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const xmlData = $input.first().json.data;\n\n// Split the XML into individual <entry> blocks\nconst entryBlocks = xmlData.split('<entry>').slice(1);\n\nconst papers = entryBlocks.map(block => {\n  const getField = (tag) => {\n    const match = block.match(new RegExp(`<${tag}[^>]*>([\\\\s\\\\S]*?)<\\/${tag}>`));\n    return match ? match[1].trim() : '';\n  };\n\n  const linkMatch = block.match(/<id>([\\s\\S]*?)<\\/id>/);\n  const publishedMatch = block.match(/<published>([\\s\\S]*?)<\\/published>/);\n\n  return {\n    title: getField('title').replace(/\\s+/g, ' '),\n    abstract: getField('summary').replace(/\\s+/g, ' '),\n    link: linkMatch ? linkMatch[1].trim() : '',\n    published: publishedMatch ? publishedMatch[1].trim() : ''\n  };\n});\n\nreturn papers.map(p => ({ json: p }));"
+      },
+      "id": "1be58910-aa1d-4455-9d29-5d2ed918da27",
+      "name": "Parse XML Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const papers = $input.all();\n\nlet emailBody = '<h2>Daily AI/ML Papers Digest</h2>\\n';\nemailBody += '<p>Here are the 5 most recent AI/ML papers from arXiv:</p>\\n\\n';\n\npapers.forEach((paper, index) => {\n  emailBody += '<h3>' + (index + 1) + '. ' + paper.json.title + '</h3>\\n';\n  emailBody += '<p><strong>Summary:</strong> ' + paper.json.summary + '</p>\\n';\n  emailBody += '<p><strong>Link:</strong> <a href=\"' + paper.json.link + '\">' + paper.json.link + '</a></p>\\n';\n  emailBody += '<hr>\\n';\n});\n\nreturn [{ json: { emailBody } }];"
+      },
+      "id": "b6aee907-15ba-4aef-9aab-1d5d2e26abad",
+      "name": "Create Email Digest",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "khurramrashid0786@gmail.com",
+        "subject": "=Daily AI/ML Papers Digest - {{ $now.toFormat(\"MMMM d, yyyy\") }}",
+        "message": "={{ $json.emailBody }}",
+        "options": {}
+      },
+      "id": "2d8a8fff-b337-40f1-93a1-44b7c69df844",
+      "name": "Send Gmail Digest",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1488,
+        208
+      ],
+      "webhookId": "98d84231-a547-44b0-9926-807ace6b8f2b",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "nECdaBLm7t74DhAh",
+          "name": "Gmail OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1",
+              "name": "title",
+              "type": "string",
+              "value": "={{ $('Loop Over Papers').item.json.title }}"
+            },
+            {
+              "id": "2",
+              "name": "link",
+              "type": "string",
+              "value": "={{ $('Loop Over Papers').item.json.link }}"
+            },
+            {
+              "id": "3",
+              "name": "summary",
+              "type": "string",
+              "value": "={{ $json.output }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "95172353-78d6-4f11-9b64-666c37347d88",
+      "name": "Combine Paper Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1488,
+        624
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "aca71dcb-7e84-41f0-8d9a-fecd99f1b523",
+      "name": "Loop Over Papers",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        912,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=Summarize the following AI/ML research paper abstract in exactly 3 sentences for a non-expert technical reader. Make it clear and accessible:\n\n{{ $json.abstract }}",
+        "options": {
+          "systemMessage": "You are a helpful assistant that summarizes academic papers for non-expert technical readers. Always provide exactly 3 clear, concise sentences."
+        }
+      },
+      "id": "c56decc3-6b40-4225-8478-f52820c15605",
+      "name": "Summarize Abstract",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        1136,
+        512
+      ]
+    },
+    {
+      "parameters": {
+        "modelName": "=models/gemini-3-flash-preview\n",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        1216,
+        736
+      ],
+      "id": "fcdaf7cb-d9a4-48c9-bee1-cddf573c11e5",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": "Cc3Vvv0BlACcwqkd",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily at 8 AM": {
+      "main": [
+        [
+          {
+            "node": "Fetch arXiv Papers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch arXiv Papers": {
+      "main": [
+        [
+          {
+            "node": "Parse XML Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse XML Response": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Papers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Email Digest": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail Digest",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Paper Data": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Papers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Papers": {
+      "main": [
+        [
+          {
+            "node": "Create Email Digest",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Summarize Abstract",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Abstract": {
+      "main": [
+        [
+          {
+            "node": "Combine Paper Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Summarize Abstract",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "148a8ddf-8bc1-4ad3-910b-892b3a6c30a5",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "4c69191a7cf6dcbd7a01564e3fc0cef8e80324177375c1ebe910a5a29575a153"
+  },
+  "nodeGroups": [],
+  "id": "Yebiv20VzXc64w53",
+  "tags": []
+}
